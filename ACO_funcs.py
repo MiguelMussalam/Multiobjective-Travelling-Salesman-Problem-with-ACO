@@ -55,46 +55,49 @@ def criar_matriz_custo(
     
     # --- 3. Retorna o resultado ---
     return matriz_custo_final
+
 def prox_cidade(
     cidade_atual: int, 
     tour_parcial: np.ndarray, 
-    feromonios: np.array, 
-    visibilidade: np.ndarray
+    feromonios: np.ndarray,
+    visibilidade: np.ndarray,
+    NUM_CIDADES : int,
+    A : float,
+    B : float
 ) -> int:
     """
-    Decide a próxima cidade a ser visitada usando uma regra GULOSA (determinística),
-    mas adaptada para o contexto multiobjetivo e sem variáveis globais.
-
-    Args:
-        cidade_atual: O índice da cidade onde a formiga está.
-        tour_parcial: Um array com os índices das cidades já visitadas.
-        feromonios: A matriz de feromônios atual.
-        visibilidade: A matriz de atratividade (1 / custo_combinado).
-
-    Returns:
-        O índice da próxima cidade a ser visitada.
+    Decide a próxima cidade a ser visitada usando uma regra GULOSA,
+    mas agora ponderada pelos expoentes Alpha (A) e Beta (B).
     """
-    num_cidades = feromonios.shape[0]
-    prob_maxima = -1.0
+    prob_maxima = -1.0 # Usar -1.0 é mais seguro para a primeira comparação
     proxima_cidade_idx = -1
 
-    soma_desejabilidades = 0.0
-    for c in range(num_cidades):
-        if c not in tour_parcial:
-            desejabilidade = visibilidade[cidade_atual, c] * feromonios[cidade_atual, c]
-            soma_desejabilidades += desejabilidade
+    # --- Parte 1: Calcular a soma das desejabilidades ponderadas ---
+    soma = 0.0
+    for c in range(NUM_CIDADES):
+        if c not in tour_parcial: # Forma mais limpa de checar
+            
+            # Eleva cada fator à sua respectiva potência
+            fator_feromonio = feromonios[cidade_atual, c] ** A
+            fator_visibilidade = visibilidade[cidade_atual, c] ** B
+            
+            soma += (fator_visibilidade * fator_feromonio)
     
-    if soma_desejabilidades == 0:
-        # Se não há caminho, escolhe a primeira cidade disponível que não esteja no tour
-        disponiveis = np.setdiff1d(np.arange(num_cidades), tour_parcial)
+    # Prevenção contra divisão por zero
+    if soma == 0:
+        disponiveis = np.setdiff1d(np.arange(NUM_CIDADES), tour_parcial)
         return disponiveis[0] if len(disponiveis) > 0 else -1
 
-    for c in range(num_cidades):
+    # --- Parte 2: Encontrar a cidade com a maior probabilidade ---
+    for c in range(NUM_CIDADES):
         if c not in tour_parcial:
-            # Calcula a probabilidade (desejabilidade / soma total)
-            prob_caminho = (visibilidade[cidade_atual, c] * feromonios[cidade_atual, c]) / soma_desejabilidades
             
-            # Se a probabilidade deste caminho for a maior encontrada até agora, guarda
+            # --- MUDANÇA APLICADA AQUI TAMBÉM ---
+            fator_feromonio = feromonios[cidade_atual, c] ** A
+            fator_visibilidade = visibilidade[cidade_atual, c] ** B
+            
+            prob_caminho = ((fator_visibilidade * fator_feromonio) / soma)
+            
             if prob_caminho > prob_maxima:
                 prob_maxima = prob_caminho
                 proxima_cidade_idx = c
@@ -130,7 +133,6 @@ def calcular_custos_tours(tours: np.ndarray, custo_combinado_matrix: np.ndarray)
     
     # 3. Retorna os resultados em vez de usar globais
     return custos, melhor_agente_idx
-
 
 def atualizar_feromonio(
     feromonios: np.ndarray, 

@@ -1,5 +1,6 @@
 import typing as tp
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from ACO_funcs import *
 from dados_cidades import carregar_dados_viagem
@@ -20,15 +21,15 @@ melhor_agente = -1
 qtde_feromonio = np.zeros(NUM_CIDADES)
 
 # constantes do ACO
-A: tp.Final[float] = 0.5 # influência do feromônio
-B: tp.Final[float] = 0.5 # influência da heurística
-R: tp.Final[float] = 0.5 # Taxa de evaporação do feromônio
+A: tp.Final[float] = 1.0 # influência do feromônio
+B: tp.Final[float] = 1.0 # influência da heurística
+R: tp.Final[float] = 1.0 # Taxa de evaporação do feromônio
 Q: tp.Final[float] = 1.0 # intensidade/quantidade de feromônio
 
 # pesos
-PESO_DISTANCIA: tp.Final[float] = 0.2 
+PESO_DISTANCIA: tp.Final[float] = 0.3 
 PESO_TEMPO: tp.Final[float] = 0.5
-PESO_CUSTO: tp.Final[float] = 0.3
+PESO_CUSTO: tp.Final[float] = 0.2
 
 # feromonios iniciais
 feromonios = np.array([
@@ -44,6 +45,8 @@ feromonios = np.array([
               [0.30, 0.30, 0.15, 0.45, 0.15, 0.30, 0.25, 0.20, 0.30, 9.99]
              ])
 
+nomes_indices = ['SANTOS','CAMPINAS','SOROCABA','RIBEIRÃO PRETO','ADAMANTINA',
+                 'SÃO JOSÉ DOS CAMPOS', 'CAÇAPAVA', 'AVARÉ', 'AREIAS', 'HOLAMBRA']
 
 if __name__ == '__main__':
     matriz_multiobjetivo = criar_matriz_custo(distancia_cidades,tempo_viagem,custo_viagem,PESO_CUSTO,PESO_DISTANCIA,PESO_TEMPO)
@@ -52,7 +55,8 @@ if __name__ == '__main__':
     visibilidade = 1 / (matriz_multiobjetivo + epsilon)
     np.fill_diagonal(visibilidade, 0) # Nenhuma cidade é visível para si mesma
 
-    print(matriz_multiobjetivo)
+    matriz_multiobjetivo_df = pd.DataFrame(visibilidade,nomes_indices,nomes_indices)
+    print(matriz_multiobjetivo_df)
 
     for i in range(EPOCAS):
         tours.fill(-1)
@@ -68,7 +72,7 @@ if __name__ == '__main__':
             while(True):
                 t = t+1
                 if(t < NUM_CIDADES):
-                    tours[f][t] = prox_cidade(tours[f][t-1].astype(int), tours[f], feromonios,visibilidade)
+                    tours[f][t] = prox_cidade(tours[f][t-1].astype(int), tours[f], feromonios,visibilidade, NUM_CIDADES, A, B)
                 else:
                     tours[f][t] = inicio[f]
                     break
@@ -79,30 +83,69 @@ if __name__ == '__main__':
         print("CUSTOS:", custos)
         print("MELHOR AGENTE:", melhor_agente)
 
-        # plotar todos os tours
-        str = ['Santos: 0','Campinas: 1','Sorocaba: 2','Ribeirão Preto: 3','Adamantina: 4','São José dos Campos: 5','Caçapava: 6','Avaré: 7','Areias: 8', 'Holambra: 9']
-        x, y = coordenadas.T
-        plt.plot(x, y, color='black', marker='o', markersize=5)
-        for i in range(NUM_CIDADES):
-            plt.annotate(str[i], (x[i], y[i]), xytext=(x[i]+0.03, y[i]+0.1), bbox=dict(boxstyle="round", alpha=0.1), color="black", size=10, fontweight="bold")
+        # 1. Prepara a base do gráfico (pontos e nomes das cidades)
+        plt.figure(figsize=(16, 10)) # Gráfico maior para melhor visualização
+        
+        str_cidades = [
+            'Santos', 'Campinas', 'Sorocaba', 'R. Preto', 'Adamantina', 
+            'SJC', 'Caçapava', 'Avaré', 'Areias', 'Holambra'
+        ]
+        x_coords, y_coords = coordenadas.T
+        
+        # Plota os pontos pretos das cidades
+        plt.plot(x_coords, y_coords, color='black', marker='o', markersize=7, linestyle='')
+        
+        # Adiciona os nomes das cidades
+        for idx in range(NUM_CIDADES):
+            plt.annotate(
+                f"{str_cidades[idx]}: {idx}", 
+                (x_coords[idx], y_coords[idx]), 
+                xytext=(x_coords[idx], y_coords[idx] + 0.1), # Posição do texto
+                ha='center', 
+                bbox=dict(boxstyle="round,pad=0.3", fc="lightblue", alpha=0.7)
+            )
 
-        graph = np.empty((NUM_CIDADES+1, 2))
+        # 2. (Opcional) Plota os tours das formigas "não-melhores" em azul claro
         for f in range(NUM_CIDADES):
-            for c in range(NUM_CIDADES+1):
-                graph[c] = coordenadas[tours[f][c].astype(int)]
+            if f != melhor_agente:
+                tour_ruim = tours[f].astype(int)
+                graph = coordenadas[tour_ruim]
+                x_tour, y_tour = graph.T
+                plt.plot(x_tour, y_tour, linestyle='dashed', color='blue', alpha=0.2) # Alpha baixo
 
-            x, y = graph.T
-            plt.plot(x, y, linestyle='dashed', color='blue')
+        # 3. Plota o MELHOR TOUR com destaque e gradiente de cor (FADE)
+        melhor_tour_indices = tours[melhor_agente].astype(int)
+        
+        # Pega o mapa de cores que vai do branco ao vermelho
+        cmap = plt.get_cmap('Reds')
 
-        # plotar melhor tour
-        for c in range(NUM_CIDADES+1):
-            graph[c] = coordenadas[tours[melhor_agente][c].astype(int)]
+        # Itera sobre cada SEGMENTO do melhor tour para plotá-lo individualmente
+        for passo in range(NUM_CIDADES): # O tour tem 10 segmentos (passos)
+            ponto_origem_idx = melhor_tour_indices[passo]
+            ponto_destino_idx = melhor_tour_indices[passo+1]
+            
+            ponto_origem_coords = coordenadas[ponto_origem_idx]
+            ponto_destino_coords = coordenadas[ponto_destino_idx]
 
-        x, y = graph.T
-        #plt.ion()
-        plt.plot(x, y, color='red')
-        #plt.draw()
-        #plt.pause(0.005)
+            # Calcula a cor para este segmento. O valor de progresso vai de 0.0 a 1.0
+            progresso = passo / (NUM_CIDADES - 1)
+            cor_segmento = cmap(progresso)
+
+            # Plota o segmento
+            plt.plot(
+                [ponto_origem_coords[0], ponto_destino_coords[0]], # Coordenadas X
+                [ponto_origem_coords[1], ponto_destino_coords[1]], # Coordenadas Y
+                color=cor_segmento,
+                linewidth=3, # Linha mais grossa para destacar
+                solid_capstyle='round'
+            )
+
+        plt.title(f"Melhor Rota da Época {i+1} (Agente {melhor_agente})", fontsize=16)
+        plt.xlabel("Longitude")
+        plt.ylabel("Latitude")
+        plt.grid(True)
         plt.show()
 
-        atualizar_feromonio(feromonios, tours, custos, melhor_agente, Q, R)
+        feromonios = atualizar_feromonio(feromonios, tours, custos, melhor_agente, Q, R)
+        feromonio_fd = pd.DataFrame(feromonios,nomes_indices,nomes_indices)
+        print(feromonio_fd)
